@@ -1,0 +1,48 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: discordbot_db
+    env_file:
+      - .env  # Explicitly load .env
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "botuser", "-d", "points_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: discordbot_bot
+    env_file:
+      - .env  # Explicitly load .env
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Docker Compose automatically picks up from .env
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      DB_HOST: ${DB_HOST}
+      DB_USER: ${DB_USER}
+      DB_PASS: ${DB_PASS}
+      DB_NAME: ${DB_NAME}
+    volumes:
+      - .:/app
+    command: >
+      python bot.py
+    # If you need to see logs in real time, you can also set:
+    # restart: always
+
+volumes:
+  db_data:

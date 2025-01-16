@@ -1,0 +1,14 @@
+-- init.sql
+CREATE TABLE IF NOT EXISTS points (
+  id SERIAL PRIMARY KEY,
+  member_name VARCHAR(50) NOT NULL,
+  points FLOAT DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS history (
+  id SERIAL PRIMARY KEY,
+  member_name VARCHAR(50) NOT NULL,
+  reason TEXT,
+  points FLOAT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
