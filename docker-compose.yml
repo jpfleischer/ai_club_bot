@@ -2,6 +2,7 @@ services:
   db:
     image: postgres:15-alpine
     container_name: discordbot_db
+    restart: always
     env_file:
       - .env  # Explicitly load .env
     environment:
@@ -25,6 +26,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: discordbot_bot
+    restart: always
     env_file:
       - .env  # Explicitly load .env
     depends_on:
