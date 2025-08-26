@@ -4,6 +4,9 @@ from discord import app_commands
 from discord.ext import commands
 import psycopg2
 from typing import Optional
+import io
+import openpyxl
+
 
 # ------------------------------------------------------------------------
 # Environment variables (set these in .env, which docker-compose will load):
@@ -406,5 +409,57 @@ async def showmembers(interaction: discord.Interaction):
     members_list += "```"
 
     await interaction.response.send_message(members_list)
+
+import io
+import openpyxl
+
+@cabinet_only()
+@bot.tree.command(name="addMembers_fromExcel", description="Upload an Excel file with First/Last Name columns to add members.")
+@app_commands.describe(file="Excel file (.xlsx) with First Name and Last Name columns")
+async def addmembers_fromexcel(interaction: discord.Interaction, file: discord.Attachment):
+    # Check file type
+    if not file.filename.endswith(".xlsx"):
+        await interaction.response.send_message("Please upload a valid .xlsx Excel file.", ephemeral=True)
+        return
+
+    file_bytes = await file.read()
+    workbook = openpyxl.load_workbook(io.BytesIO(file_bytes))
+    sheet = workbook.active  # use first sheet
+
+    headers = {cell.value.lower(): idx for idx, cell in enumerate(next(sheet.iter_rows(min_row=1, max_row=1)), start=1)}
+
+    if "first name" not in headers or "last name" not in headers:
+        await interaction.response.send_message("Excel must contain 'First Name' and 'Last Name' columns.", ephemeral=True)
+        return
+
+    first_idx = headers["first name"]
+    last_idx = headers["last name"]
+
+    added, skipped = [], []
+
+    for row in sheet.iter_rows(min_row=2):
+        first = row[first_idx-1].value
+        last = row[last_idx-1].value
+        if not first or not last:
+            continue
+        member_name = f"{first.strip()} {last.strip()}"
+
+        # Check if exists
+        cursor.execute("SELECT member_name FROM points WHERE member_name = %s", (member_name,))
+        if cursor.fetchone() is None:
+            cursor.execute("INSERT INTO points (member_name, points) VALUES (%s, %s)", (member_name, 0.0))
+            added.append(member_name)
+        else:
+            skipped.append(member_name)
+
+    # Build response
+    msg = f"✅ Added {len(added)} members.\n"
+    if skipped:
+        msg += f"⚠️ Skipped {len(skipped)} existing members.\n"
+    if added:
+        msg += "Newly added: " + ", ".join(added[:10]) + ("..." if len(added) > 10 else "")
+
+    await interaction.response.send_message(msg)
+
 
 bot.run(DISCORD_TOKEN)
