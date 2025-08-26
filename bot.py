@@ -458,5 +458,18 @@ async def addmembers_fromexcel(interaction: discord.Interaction, file: discord.A
 
     await interaction.response.send_message(msg)
 
+@cabinet_only()
+@bot.tree.command(name="removeallmembers", description="⚠️ Remove ALL members and their history from the database.")
+async def removeallmembers(interaction: discord.Interaction):
+    #Removes all the members that the discord bot has saved. Useful only for new years/new semesters. Resets.
+    # Delete history first (FK consistency if you add constraints later)
+    cursor.execute("DELETE FROM history")
+    cursor.execute("DELETE FROM points")
+
+    await interaction.response.send_message(
+        "⚠️ All members and their history have been **permanently removed** from the database.",
+        ephemeral=True
+    )
+
 
 bot.run(DISCORD_TOKEN)
