@@ -6,6 +6,7 @@ just say `make`
 you need docker and you need an .env file
 
 
+```ini
 # ------------------------------------------------------------------------
 # Environment variables (set these in .env, which docker-compose will load):
 #
@@ -16,3 +17,4 @@ you need docker and you need an .env file
 # DB_NAME=points_db
 # GUILD_ID=you need to right click the ai club server and click copy id with developer mode on
 # ------------------------------------------------------------------------
+```
