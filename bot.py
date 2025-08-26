@@ -2,6 +2,7 @@ import os
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.ui import View, Button
 import psycopg2
 from typing import Optional
 import io
@@ -116,7 +117,8 @@ async def _send_codeblock_chunks(
     *,
     ephemeral: bool = False,
 ):
-    """Send a list of lines inside one or more ``` code blocks without exceeding 2000 chars."""
+    """Send a list of lines inside one or more ``` code blocks without exceeding 2000 chars.
+       It will use interaction.response for the first send (if available), otherwise followups."""
     CHUNK_SIZE = 1900  # headroom for ``` and newlines
     chunks, buf = [], "```\n"
     for line in lines:
@@ -129,8 +131,14 @@ async def _send_codeblock_chunks(
         buf += "```"
         chunks.append(buf)
 
-    # first chunk as initial response; rest as followups
-    await interaction.response.send_message(chunks[0], ephemeral=ephemeral)
+    # choose the correct sender based on whether we've responded already
+    first_send = (
+        interaction.response.send_message
+        if not interaction.response.is_done()
+        else interaction.followup.send
+    )
+
+    await first_send(chunks[0], ephemeral=ephemeral)
     for chunk in chunks[1:]:
         await interaction.followup.send(chunk, ephemeral=ephemeral)
 
@@ -508,10 +516,17 @@ async def addmembers_fromexcel(interaction: discord.Interaction, file: discord.A
     # --- Report ---
     msg = f"✅ Added {len(added)} members."
     if skipped:
-        msg += f"  ⚠️ Skipped {len(skipped)} existing."
+        msg += f"  ⚠️ Skipped {len(skipped)} duplicate{'s' if len(skipped)!=1 else ''} (already existed)."
     if added:
         msg += "\nNewly added: " + ", ".join(added[:10]) + ("..." if len(added) > 10 else "")
+
+    # Send summary first
     await interaction.response.send_message(msg, ephemeral=True)
+
+    # If there are duplicates, send their names as a paged code block list (now safe)
+    if skipped:
+        lines = ["Duplicates (already existed)", "-----------------------------"] + skipped
+        await _send_codeblock_chunks(interaction, lines, ephemeral=True)
 
 
 @cabinet_only()
@@ -565,18 +580,75 @@ async def renamemember(interaction: discord.Interaction, old_member: str, new_na
     )
 
 
+@bot.tree.command(name="membercount", description="Show the total number of members in the AI Club.")
+async def membercount(interaction: discord.Interaction):
+    cursor.execute("SELECT COUNT(*) FROM points")
+    (count,) = cursor.fetchone()
+    await interaction.response.send_message(f"Total members: **{count}**")
+
+
 @cabinet_only()
 @bot.tree.command(name="removeallmembers", description="⚠️ Remove ALL members and their history from the database.")
 async def removeallmembers(interaction: discord.Interaction):
-    #Removes all the members that the discord bot has saved. Useful only for new years/new semesters. Resets.
-    # Delete history first (FK consistency if you add constraints later)
-    cursor.execute("DELETE FROM history")
-    cursor.execute("DELETE FROM points")
+    """Ask for confirmation before removing all members."""
 
+    class ConfirmView(View):
+        def __init__(self, owner_id: int):
+            super().__init__(timeout=30)  # 30s timeout
+            self.owner_id = owner_id
+
+        async def interaction_check(self, i: discord.Interaction) -> bool:
+            # Only the original invoker can press buttons
+            if i.user.id != self.owner_id:
+                await i.response.send_message("You can't interact with this confirmation.", ephemeral=True)
+                return False
+            return True
+
+        async def on_timeout(self):
+            # Disable buttons when timing out
+            for item in self.children:
+                if isinstance(item, Button):
+                    item.disabled = True
+            try:
+                await self.message.edit(content="⏳ Confirmation timed out. No changes made.", view=self)
+            except Exception:
+                pass
+
+        @discord.ui.button(label="YES, DELETE EVERYTHING", style=discord.ButtonStyle.danger)
+        async def confirm(self, interaction_btn: discord.Interaction, button: Button):
+            # Perform deletion
+            cursor.execute("DELETE FROM history")
+            cursor.execute("DELETE FROM points")
+
+            # Disable buttons after action
+            for item in self.children:
+                if isinstance(item, Button):
+                    item.disabled = True
+
+            await interaction_btn.response.edit_message(
+                content="⚠️ All members and their history have been **permanently removed**.",
+                view=self
+            )
+
+        @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+        async def cancel(self, interaction_btn: discord.Interaction, button: Button):
+            for item in self.children:
+                if isinstance(item, Button):
+                    item.disabled = True
+            await interaction_btn.response.edit_message(
+                content="Action cancelled. Database unchanged.",
+                view=self
+            )
+
+    view = ConfirmView(owner_id=interaction.user.id)
+    # Keep a handle to edit on timeout
     await interaction.response.send_message(
-        "⚠️ All members and their history have been **permanently removed** from the database.",
+        "⚠️ **Are you absolutely sure?** This will permanently delete **all members and their history**.",
+        view=view,
         ephemeral=True
     )
+    # Save the message so on_timeout can edit it
+    view.message = await interaction.original_response()
 
 
 bot.run(DISCORD_TOKEN)
