@@ -93,7 +93,8 @@ async def addmember(interaction: discord.Interaction, member_name: str):
     """
     Adds a new member to the 'points' table with 0 points (if not existing).
     """
-    cursor.execute("SELECT member_name FROM points WHERE member_name = %s", (member_name,))
+    cursor.execute(
+        "SELECT member_name FROM points WHERE member_name = %s", (member_name,))
     row = cursor.fetchone()
     if row is not None:
         await interaction.response.send_message(
@@ -120,7 +121,8 @@ async def removemember(interaction: discord.Interaction, member: str):
     and deletes all corresponding logs from the 'history' table.
     """
     # 1) Check if member exists
-    cursor.execute("SELECT member_name FROM points WHERE member_name = %s", (member,))
+    cursor.execute(
+        "SELECT member_name FROM points WHERE member_name = %s", (member,))
     row = cursor.fetchone()
     if row is None:
         await interaction.response.send_message(
@@ -152,7 +154,8 @@ async def addpoints(interaction: discord.Interaction, member: str, amount: float
     """
     Adds points to an existing member and records the change in the 'history' table.
     """
-    cursor.execute("SELECT points FROM points WHERE member_name = %s", (member,))
+    cursor.execute(
+        "SELECT points FROM points WHERE member_name = %s", (member,))
     row = cursor.fetchone()
     if not row:
         await interaction.response.send_message(
@@ -190,7 +193,8 @@ async def removepoints(interaction: discord.Interaction, member: str, amount: fl
     """
     Subtracts points from an existing member and records the change in the 'history' table.
     """
-    cursor.execute("SELECT points FROM points WHERE member_name = %s", (member,))
+    cursor.execute(
+        "SELECT points FROM points WHERE member_name = %s", (member,))
     row = cursor.fetchone()
     if not row:
         await interaction.response.send_message(
@@ -219,7 +223,8 @@ async def removepoints(interaction: discord.Interaction, member: str, amount: fl
 
 @bot.tree.command(name="showpoints", description="Show a particular member's points or everyone's.")
 @app_commands.describe(member="Optionally specify a member to show points for. If omitted, shows all.")
-@app_commands.autocomplete(member=member_autocomplete)  # <--- attach here, too (optional)
+# <--- attach here, too (optional)
+@app_commands.autocomplete(member=member_autocomplete)
 async def showpoints(interaction: discord.Interaction, member: Optional[str] = None):
     """
     If 'member' is provided, show points for that one member.
@@ -227,7 +232,8 @@ async def showpoints(interaction: discord.Interaction, member: Optional[str] = N
     """
     if member is None:
         # No member provided -> show all
-        cursor.execute("SELECT member_name, points FROM points ORDER BY member_name ASC")
+        cursor.execute(
+            "SELECT member_name, points FROM points ORDER BY member_name ASC")
         rows = cursor.fetchall()
 
         if not rows:
@@ -245,7 +251,8 @@ async def showpoints(interaction: discord.Interaction, member: Optional[str] = N
         await interaction.response.send_message(points_table)
     else:
         # Specific member -> show only that one
-        cursor.execute("SELECT member_name, points FROM points WHERE member_name = %s", (member,))
+        cursor.execute(
+            "SELECT member_name, points FROM points WHERE member_name = %s", (member,))
         row = cursor.fetchone()
         if not row:
             await interaction.response.send_message(
@@ -264,12 +271,14 @@ async def showpoints(interaction: discord.Interaction, member: Optional[str] = N
 
 @bot.tree.command(name="showlogs", description="Show the historical logs for a given member.")
 @app_commands.describe(member="The member whose history/logs you want to see.")
-@app_commands.autocomplete(member=member_autocomplete)  # <--- attach here as well
+# <--- attach here as well
+@app_commands.autocomplete(member=member_autocomplete)
 async def showlogs(interaction: discord.Interaction, member: str):
     """
     Shows all history logs for a specific member, sorted by the creation time.
     """
-    cursor.execute("SELECT member_name FROM points WHERE member_name = %s", (member,))
+    cursor.execute(
+        "SELECT member_name FROM points WHERE member_name = %s", (member,))
     row = cursor.fetchone()
     if not row:
         await interaction.response.send_message(
@@ -303,5 +312,25 @@ async def showlogs(interaction: discord.Interaction, member: str):
     logs_table += "```"
     await interaction.response.send_message(logs_table)
 
+
+@bot.tree.command(name="showmembers", description="Show a list of all members in the database.")
+async def showmembers(interaction: discord.Interaction):
+    """
+    Shows a list of all members in the database.
+    """
+    cursor.execute("SELECT member_name FROM points ORDER BY member_name ASC")
+    rows = cursor.fetchall()
+
+    if not rows:
+        await interaction.response.send_message("No members in the database yet!")
+        return
+
+    members_list = "```\nMembers\n"
+    members_list += "------------\n"
+    for (name_,) in rows:
+        members_list += f"{name_}\n"
+    members_list += "```"
+
+    await interaction.response.send_message(members_list)
 
 bot.run(DISCORD_TOKEN)
