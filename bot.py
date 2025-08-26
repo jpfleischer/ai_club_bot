@@ -410,9 +410,6 @@ async def showmembers(interaction: discord.Interaction):
 
     await interaction.response.send_message(members_list)
 
-import io
-import openpyxl
-
 @cabinet_only()
 @bot.tree.command(name="addMembers_fromExcel", description="Upload an Excel file with First/Last Name columns to add members.")
 @app_commands.describe(file="Excel file (.xlsx) with First Name and Last Name columns")
