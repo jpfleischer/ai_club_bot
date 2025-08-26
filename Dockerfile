@@ -15,4 +15,4 @@ COPY . /app
 # But do NOT hardcode your token in the Dockerfile!
 
 # Final command to run your bot
-CMD ["python", "bot.py"]
+CMD ["python", "-u", "bot.py"]

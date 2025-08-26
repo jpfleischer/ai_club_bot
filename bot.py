@@ -13,6 +13,7 @@ from typing import Optional
 # DB_USER=botuser
 # DB_PASS=botpass
 # DB_NAME=points_db
+# GUILD_ID=you need to right click the ai club server and click copy id with developer mode on
 # ------------------------------------------------------------------------
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
@@ -21,6 +22,9 @@ DB_HOST = os.environ.get("DB_HOST", "localhost")
 DB_USER = os.environ.get("DB_USER", "postgres")
 DB_PASS = os.environ.get("DB_PASS", "")
 DB_NAME = os.environ.get("DB_NAME", "points_db")
+
+raw_gid = os.environ.get("GUILD_ID")
+GUILD_ID: Optional[int] = int(raw_gid) if raw_gid and raw_gid.isdigit() else None
 
 # 1) Connect to Postgres
 conn = psycopg2.connect(
@@ -55,12 +59,28 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
+PURGE_COMMANDS = os.environ.get("PURGE_COMMANDS") == "1"  # default off
+
 @bot.event
 async def on_ready():
     print(f"We have logged in as {bot.user}")
     try:
-        await bot.tree.sync()
-        print("Slash commands synced.")
+        guild = discord.Object(id=GUILD_ID) if GUILD_ID else None
+
+        if guild:
+            # Make guild-scoped copies of your global commands (instant visibility)
+            bot.tree.copy_global_to(guild=guild)
+            synced = await bot.tree.sync(guild=guild)
+            print(f"Synced to guild {GUILD_ID}: {[c.name for c in synced]}")
+        else:
+            synced = await bot.tree.sync()
+            print(f"Synced globally: {[c.name for c in synced]}")
+
+        # Debug: what do we have locally vs remotely?
+        print("Local commands:", [c.qualified_name for c in bot.tree.get_commands()])
+        remote = await bot.tree.fetch_commands(guild=guild) if guild else await bot.tree.fetch_commands()
+        print("Remote commands now:", [c.name for c in remote])
+
     except Exception as e:
         print(f"Error syncing commands: {e}")
 

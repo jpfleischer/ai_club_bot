@@ -42,7 +42,7 @@ services:
     volumes:
       - .:/app
     command: >
-      python bot.py
+      python -u bot.py
     # If you need to see logs in real time, you can also set:
     # restart: always
 

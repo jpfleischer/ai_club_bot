@@ -1,7 +1,7 @@
 .PHONY: up down build logs shell stop
 
 # Bring up both Postgres and the bot in the background
-up:
+up: down build
 	docker compose up -d
 
 # Build (or rebuild) the images
