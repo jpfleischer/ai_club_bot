@@ -85,6 +85,54 @@ async def on_ready():
         print(f"Error syncing commands: {e}")
 
 
+def _has_cabinet_role(interaction: discord.Interaction) -> bool:
+    if interaction.guild is None:
+        return False
+    member = interaction.user  # discord.Member during guild interactions
+    roles = getattr(member, "roles", []) or []
+    return any("cabinet" in (r.name or "").lower() for r in roles)
+
+def cabinet_only():
+    """Use as @cabinet_only() on sensitive commands."""
+    return app_commands.check(_has_cabinet_role)
+
+async def _deny_ephemeral(interaction: discord.Interaction, msg: str = "You need a Cabinet role to run this command."):
+    # Avoid double-responding if something else already did
+    if interaction.response.is_done():
+        try:
+            await interaction.followup.send(msg, ephemeral=True)
+        except Exception:
+            pass
+    else:
+        await interaction.response.send_message(msg, ephemeral=True)
+
+
+# --- ONE global error handler for all app commands ---
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    # Permission (check) failures → quiet, friendly reply
+    if isinstance(error, app_commands.CheckFailure):
+        await _deny_ephemeral(interaction, "You need a Cabinet role to run this command.")
+        return
+
+    # Autocomplete errors or other expected issues you want to hide from users
+    if isinstance(error, app_commands.CommandInvokeError):
+        # You can introspect error.original if you want to branch
+        pass
+
+    # Fallback: log and show a generic message without leaking internals
+    try:
+        print(f"[appcmd error] {type(error).__name__}: {error}")
+        if not interaction.response.is_done():
+            await interaction.response.send_message("Something went wrong running that command.", ephemeral=True)
+        else:
+            await interaction.followup.send("Something went wrong running that command.", ephemeral=True)
+    except Exception:
+        # Avoid crashing the handler
+        pass
+
+
+
 async def member_autocomplete(
     interaction: discord.Interaction,
     current: str
@@ -92,6 +140,8 @@ async def member_autocomplete(
     """
     Return a list of up to 25 matching member names based on `current` partial input.
     """
+    if not _has_cabinet_role(interaction):
+        return []
     # For example, fetch from DB where member_name ILIKE '%current%'
     cursor.execute("""
         SELECT member_name
@@ -107,6 +157,7 @@ async def member_autocomplete(
     ]
 
 
+@cabinet_only()
 @bot.tree.command(name="addmember", description="Add a new member to the database with 0 starting points.")
 @app_commands.describe(member_name="The name/surname of the member to add.")
 async def addmember(interaction: discord.Interaction, member_name: str):
@@ -132,6 +183,7 @@ async def addmember(interaction: discord.Interaction, member_name: str):
     )
 
 
+@cabinet_only()
 @bot.tree.command(name="removemember", description="Remove a member and their history from the database.")
 @app_commands.describe(member="The name/surname of the member to remove from the database.")
 @app_commands.autocomplete(member=member_autocomplete)
@@ -163,6 +215,7 @@ async def removemember(interaction: discord.Interaction, member: str):
     )
 
 
+@cabinet_only()
 @bot.tree.command(name="addpoints", description="Add points to an existing member, with a reason.")
 @app_commands.describe(
     member="The member to award points to",
@@ -202,6 +255,7 @@ async def addpoints(interaction: discord.Interaction, member: str, amount: float
     )
 
 
+@cabinet_only()
 @bot.tree.command(name="removepoints", description="Remove points from an existing member, with a reason.")
 @app_commands.describe(
     member="The member to remove points from",
