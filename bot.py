@@ -50,15 +50,7 @@ class RoleView(ui.View):
         for role_name in COMMITTEE_ROLES:
             self.add_item(RoleButton(role_name))
 
-@bot.tree.command(name="showroles", description="Show committee roles you can self-assign")
-async def showroles(interaction: discord.Interaction):
-    """
-    Shows buttons for users to self-assign/remove committee roles.
-    """
-    await interaction.response.send_message(
-        "📌 Select the committee(s) you want to join by clicking the buttons below:",
-        view=RoleView()
-    )
+
 # ------------------------------------------------------------------------
 # Environment variables (set these in .env, which docker-compose will load):
 #
@@ -700,5 +692,14 @@ async def removeallmembers(interaction: discord.Interaction):
     # Save the message so on_timeout can edit it
     view.message = await interaction.original_response()
 
+@bot.tree.command(name="showroles", description="Show committee roles you can self-assign")
+async def showroles(interaction: discord.Interaction):
+    """
+    Shows buttons for users to self-assign/remove committee roles.
+    """
+    await interaction.response.send_message(
+        "📌 Select the committee(s) you want to join by clicking the buttons below:",
+        view=RoleView()
+    )
 
 bot.run(DISCORD_TOKEN)
