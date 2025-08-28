@@ -8,7 +8,6 @@ from typing import Optional
 import io
 import openpyxl
 from discord import ui, Interaction
-from discord.ext import commands
 
 COMMITTEE_ROLES = [
     "Campus and Community Connections Committee",
@@ -17,13 +16,12 @@ COMMITTEE_ROLES = [
     "Academics and Research Committee"
 ]
 
-class RoleButton(ui.button):
+class RoleButton(discord.ui.Button):
     def __init__(self, role_name: str):
         super().__init__(label=role_name, style=discord.ButtonStyle.primary, custom_id=role_name)
 
     async def callback(self, interaction: Interaction):
         role = discord.utils.get(interaction.guild.roles, name=self.custom_id)
-
         if not role:
             await interaction.response.send_message(
                 f"⚠️ Role **{self.custom_id}** does not exist on this server. An admin must create it first.",
@@ -44,7 +42,8 @@ class RoleButton(ui.button):
                 f"✅ You have been given the role **{role.name}**.",
                 ephemeral=True
             )
-class RoleView(ui.View):
+
+class RoleView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         for role_name in COMMITTEE_ROLES:
