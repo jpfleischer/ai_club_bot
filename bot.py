@@ -6,8 +6,58 @@ import psycopg2
 from typing import Optional
 import io
 import openpyxl
+from discord import ui, Interaction
+from discord.ext import commands
 
+COMMITTEE_ROLES = [
+    "Campus and Community Connections Committee",
+    "Technological Advancements Committee",
+    "Graduate Affairs Committee",
+    "Academics and Research Committee"
+]
 
+class RoleButton(ui.button):
+    def __init__(self, role_name: str):
+        super().__init__(label=role_name, style=discord.ButtonStyle.primary, custom_id=role_name)
+
+    async def callback(self, interaction: Interaction):
+        role = discord.utils.get(interaction.guild.roles, name=self.custom_id)
+
+        if not role:
+            await interaction.response.send_message(
+                f"⚠️ Role **{self.custom_id}** does not exist on this server. An admin must create it first.",
+                ephemeral=True
+            )
+            return
+
+        member = interaction.user
+        if role in member.roles:
+            await member.remove_roles(role)
+            await interaction.response.send_message(
+                f"❌ Removed role **{role.name}** from you.",
+                ephemeral=True
+            )
+        else:
+            await member.add_roles(role)
+            await interaction.response.send_message(
+                f"✅ You have been given the role **{role.name}**.",
+                ephemeral=True
+            )
+class RoleView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+        for role_name in COMMITTEE_ROLES:
+            self.add_item(RoleButton(role_name))
+
+@bot.tree.command(name="showroles", description="Show committee roles you can self-assign")
+async def showroles(interaction: discord.Interaction):
+    """
+    Shows buttons for users to self-assign/remove committee roles.
+    """
+    await interaction.response.send_message(
+        "📌 Select the committee(s) you want to join by clicking the buttons below:",
+        view=RoleView()
+    )
 # ------------------------------------------------------------------------
 # Environment variables (set these in .env, which docker-compose will load):
 #
