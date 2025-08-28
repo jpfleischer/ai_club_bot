@@ -29,25 +29,15 @@ class RoleButton(discord.ui.Button):
     async def callback(self, interaction: Interaction):
         role = discord.utils.get(interaction.guild.roles, name=self.custom_id)
         if not role:
-            await interaction.response.send_message(
-                f"⚠️ Role **{self.custom_id}** does not exist on this server. An admin must create it first.",
-                ephemeral=True
-            )
             return
 
         member = interaction.user
         if role in member.roles:
             await member.remove_roles(role)
-            await interaction.response.send_message(
-                f"❌ Removed role **{role.name}** from you.",
-                ephemeral=True
-            )
         else:
             await member.add_roles(role)
-            await interaction.response.send_message(
-                f"✅ You have been given the role **{role.name}**.",
-                ephemeral=True
-            )
+
+        await interaction.response.defer(ephemeral=True)
 
 
 class RoleView(discord.ui.View):
