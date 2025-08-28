@@ -16,6 +16,7 @@ COMMITTEE_ROLES = [
     "Academics and Research Committee"
 ]
 
+
 class RoleButton(discord.ui.Button):
     def __init__(self, role_name: str):
         super().__init__(label=role_name, style=discord.ButtonStyle.primary, custom_id=role_name)
@@ -43,6 +44,7 @@ class RoleButton(discord.ui.Button):
                 ephemeral=True
             )
 
+
 class RoleView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -69,7 +71,8 @@ DB_PASS = os.environ.get("DB_PASS", "")
 DB_NAME = os.environ.get("DB_NAME", "points_db")
 
 raw_gid = os.environ.get("GUILD_ID")
-GUILD_ID: Optional[int] = int(raw_gid) if raw_gid and raw_gid.isdigit() else None
+GUILD_ID: Optional[int] = int(
+    raw_gid) if raw_gid and raw_gid.isdigit() else None
 
 # 1) Connect to Postgres
 conn = psycopg2.connect(
@@ -106,6 +109,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 PURGE_COMMANDS = os.environ.get("PURGE_COMMANDS") == "1"  # default off
 
+
 @bot.event
 async def on_ready():
     print(f"We have logged in as {bot.user}")
@@ -122,12 +126,16 @@ async def on_ready():
             print(f"Synced globally: {[c.name for c in synced]}")
 
         # Debug: what do we have locally vs remotely?
-        print("Local commands:", [c.qualified_name for c in bot.tree.get_commands()])
+        print("Local commands:", [
+              c.qualified_name for c in bot.tree.get_commands()])
         remote = await bot.tree.fetch_commands(guild=guild) if guild else await bot.tree.fetch_commands()
         print("Remote commands now:", [c.name for c in remote])
 
     except Exception as e:
         print(f"Error syncing commands: {e}")
+
+    bot.add_view(RoleView)
+    print(" Registered RoleView as persistent")
 
 
 def _has_cabinet_role(interaction: discord.Interaction) -> bool:
@@ -137,9 +145,11 @@ def _has_cabinet_role(interaction: discord.Interaction) -> bool:
     roles = getattr(member, "roles", []) or []
     return any("cabinet" in (r.name or "").lower() for r in roles)
 
+
 def cabinet_only():
     """Use as @cabinet_only() on sensitive commands."""
     return app_commands.check(_has_cabinet_role)
+
 
 async def _deny_ephemeral(interaction: discord.Interaction, msg: str = "You need a Cabinet role to run this command."):
     # Avoid double-responding if something else already did
@@ -207,7 +217,6 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
     except Exception:
         # Avoid crashing the handler
         pass
-
 
 
 async def member_autocomplete(
@@ -381,7 +390,8 @@ async def showpoints(interaction: discord.Interaction, member: Optional[str] = N
     Otherwise, show points for everyone (paged to respect Discord 2000-char limit).
     """
     if member is None:
-        cursor.execute("SELECT member_name, points FROM points ORDER BY member_name ASC")
+        cursor.execute(
+            "SELECT member_name, points FROM points ORDER BY member_name ASC")
         rows = cursor.fetchall()
         if not rows:
             await interaction.response.send_message("No members in the database yet!")
@@ -400,7 +410,8 @@ async def showpoints(interaction: discord.Interaction, member: Optional[str] = N
         return
 
     # specific member
-    cursor.execute("SELECT member_name, points FROM points WHERE member_name = %s", (member,))
+    cursor.execute(
+        "SELECT member_name, points FROM points WHERE member_name = %s", (member,))
     row = cursor.fetchone()
     if not row:
         await interaction.response.send_message(f"Member '{member}' does not exist in the database.", ephemeral=True)
@@ -502,11 +513,12 @@ async def addmembers_fromexcel(interaction: discord.Interaction, file: discord.A
 
     # Read header row as plain values (no .value access needed)
     header_row = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True))
-    norm_to_index0 = {norm(v): i for i, v in enumerate(header_row)}  # 0-based indices
+    norm_to_index0 = {norm(v): i for i, v in enumerate(
+        header_row)}  # 0-based indices
 
     # Accept a few common variants
     first_candidates = {"firstname", "first", "fname"}
-    last_candidates  = {"lastname", "last", "lname", "surname", "familyname"}
+    last_candidates = {"lastname", "last", "lname", "surname", "familyname"}
 
     def find_index(candidates: set[str]) -> Optional[int]:
         for key in candidates:
@@ -515,10 +527,11 @@ async def addmembers_fromexcel(interaction: discord.Interaction, file: discord.A
         return None
 
     first_i = find_index(first_candidates)
-    last_i  = find_index(last_candidates)
+    last_i = find_index(last_candidates)
 
     if first_i is None or last_i is None:
-        pretty = ", ".join(str(v) if v is not None else "∅" for v in header_row)
+        pretty = ", ".join(
+            str(v) if v is not None else "∅" for v in header_row)
         await interaction.response.send_message(
             "Excel must contain **First Name** and **Last Name** columns.\n"
             "Accepted header variants:\n"
@@ -534,7 +547,7 @@ async def addmembers_fromexcel(interaction: discord.Interaction, file: discord.A
 
     for row in sheet.iter_rows(min_row=2, values_only=True):
         first = (row[first_i] or "").strip()
-        last  = (row[last_i]  or "").strip()
+        last = (row[last_i] or "").strip()
         if not first or not last:
             continue
 
@@ -544,7 +557,8 @@ async def addmembers_fromexcel(interaction: discord.Interaction, file: discord.A
         #     continue
 
         # Insert if not exists
-        cursor.execute("SELECT 1 FROM points WHERE member_name = %s", (member_name,))
+        cursor.execute(
+            "SELECT 1 FROM points WHERE member_name = %s", (member_name,))
         if cursor.fetchone() is None:
             cursor.execute(
                 "INSERT INTO points (member_name, points) VALUES (%s, %s)",
@@ -557,16 +571,18 @@ async def addmembers_fromexcel(interaction: discord.Interaction, file: discord.A
     # --- Report ---
     msg = f"✅ Added {len(added)} members."
     if skipped:
-        msg += f"  ⚠️ Skipped {len(skipped)} duplicate{'s' if len(skipped)!=1 else ''} (already existed)."
+        msg += f"  ⚠️ Skipped {len(skipped)} duplicate{'s' if len(skipped) != 1 else ''} (already existed)."
     if added:
-        msg += "\nNewly added: " + ", ".join(added[:10]) + ("..." if len(added) > 10 else "")
+        msg += "\nNewly added: " + \
+            ", ".join(added[:10]) + ("..." if len(added) > 10 else "")
 
     # Send summary first
     await interaction.response.send_message(msg, ephemeral=True)
 
     # If there are duplicates, send their names as a paged code block list (now safe)
     if skipped:
-        lines = ["Duplicates (already existed)", "-----------------------------"] + skipped
+        lines = ["Duplicates (already existed)",
+                 "-----------------------------"] + skipped
         await _send_codeblock_chunks(interaction, lines, ephemeral=True)
 
 
@@ -579,7 +595,8 @@ async def addmembers_fromexcel(interaction: discord.Interaction, file: discord.A
 @app_commands.autocomplete(old_member=member_autocomplete)
 async def renamemember(interaction: discord.Interaction, old_member: str, new_name: str):
     # --- normalize new name ---
-    new_name = " ".join((new_name or "").strip().split())  # collapse extra spaces
+    new_name = " ".join((new_name or "").strip().split()
+                        )  # collapse extra spaces
     if not new_name:
         await interaction.response.send_message("New name cannot be empty.", ephemeral=True)
         return
@@ -588,7 +605,8 @@ async def renamemember(interaction: discord.Interaction, old_member: str, new_na
         return
 
     # --- ensure old exists ---
-    cursor.execute("SELECT points FROM points WHERE member_name = %s", (old_member,))
+    cursor.execute(
+        "SELECT points FROM points WHERE member_name = %s", (old_member,))
     row = cursor.fetchone()
     if not row:
         await interaction.response.send_message(
@@ -691,6 +709,8 @@ async def removeallmembers(interaction: discord.Interaction):
     # Save the message so on_timeout can edit it
     view.message = await interaction.original_response()
 
+
+@cabinet_only()
 @bot.tree.command(name="showroles", description="Show committee roles you can self-assign")
 async def showroles(interaction: discord.Interaction):
     """
