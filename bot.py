@@ -10,16 +10,21 @@ import openpyxl
 from discord import ui, Interaction
 
 COMMITTEE_ROLES = [
-    "Campus and Community Connections Committee",
-    "Technological Advancements Committee",
-    "Graduate Affairs Committee",
-    "Academics and Research Committee"
+    "Campus and Community Connections Committee": "🌐",
+    "Technological Advancements Committee": "💻",
+    "Graduate Affairs Committee": "🎓",
+    "Academics and Research Committee": "📚"
 ]
 
 
 class RoleButton(discord.ui.Button):
-    def __init__(self, role_name: str):
-        super().__init__(label=role_name, style=discord.ButtonStyle.primary, custom_id=role_name)
+    def __init__(self, role_name: str, emoji: str):
+        super().__init__(
+            label=None,  # only show emoji
+            style=discord.ButtonStyle.secondary,
+            custom_id=role_name,
+            emoji=emoji
+        )
 
     async def callback(self, interaction: Interaction):
         role = discord.utils.get(interaction.guild.roles, name=self.custom_id)
@@ -48,8 +53,8 @@ class RoleButton(discord.ui.Button):
 class RoleView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-        for role_name in COMMITTEE_ROLES:
-            self.add_item(RoleButton(role_name))
+        for role_name, emoji in COMMITTEE_ROLES.items():
+            self.add_item(RoleButton(role_name, emoji))
 
 
 # ------------------------------------------------------------------------
@@ -717,7 +722,12 @@ async def showroles(interaction: discord.Interaction):
     Shows buttons for users to self-assign/remove committee roles.
     """
     await interaction.response.send_message(
-        "📌 Select the committee(s) you want to join by clicking the buttons below:",
+        """📌 Select the committee(s) you want to join by clicking the buttons below:
+            Campus and Community Connections Committee: 🌐,
+            Technological Advancements Committee: 💻,
+            Graduate Affairs Committee: 🎓,
+            Academics and Research Committee: 📚
+        """,
         view=RoleView()
     )
 
