@@ -150,7 +150,7 @@ async def on_ready():
     except Exception as e:
         print(f"Error syncing commands: {e}")
 
-    bot.add_view(RoleView)
+    bot.add_view(RoleView()) 
     print(" Registered RoleView as persistent")
 
 
