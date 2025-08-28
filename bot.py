@@ -9,35 +9,56 @@ import io
 import openpyxl
 from discord import ui, Interaction
 
-COMMITTEE_ROLES = [
+COMMITTEE_ROLES = {
     "Campus and Community Connections Committee": "🌐",
     "Technological Advancements Committee": "💻",
     "Graduate Affairs Committee": "🎓",
-    "Academics and Research Committee": "📚"
-]
+    "Academics and Research Committee": "📚",
+}
+
 
 
 class RoleButton(discord.ui.Button):
     def __init__(self, role_name: str, emoji: str):
         super().__init__(
-            label=None,  # only show emoji
+            label=None,  # emoji-only button
             style=discord.ButtonStyle.secondary,
-            custom_id=role_name,
+            custom_id=role_name,  # stable across restarts
             emoji=emoji
         )
 
     async def callback(self, interaction: Interaction):
-        role = discord.utils.get(interaction.guild.roles, name=self.custom_id)
+        guild = interaction.guild
+        if guild is None:
+            return await interaction.response.send_message("Not in a server.", ephemeral=True)
+
+        role = discord.utils.get(guild.roles, name=self.custom_id)
         if not role:
-            return
+            return await interaction.response.send_message(
+                f"⚠️ Role **{self.custom_id}** does not exist. Ask an admin to create it.", ephemeral=True
+            )
 
-        member = interaction.user
-        if role in member.roles:
-            await member.remove_roles(role)
-        else:
-            await member.add_roles(role)
+        # Optional but helpful guards to avoid opaque 403s
+        bot_member = guild.me
+        if role.managed or role.is_default():
+            return await interaction.response.send_message("I can't assign that role.", ephemeral=True)
+        if bot_member.top_role <= role:
+            return await interaction.response.send_message(
+                "My top role is below that role. Move my role **above** committee roles.", ephemeral=True
+            )
 
-        await interaction.response.defer(ephemeral=True)
+        member = interaction.user  # should be a Member in guild interactions
+        try:
+            if role in member.roles:
+                await member.remove_roles(role, reason="Self-unassign")
+                await interaction.response.send_message(f"❌ Removed **{role.name}**.", ephemeral=True)
+            else:
+                await member.add_roles(role, reason="Self-assign")
+                await interaction.response.send_message(f"✅ Added **{role.name}**.", ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                "Missing access to modify roles. Check **Manage Roles** & role order.", ephemeral=True
+            )
 
 
 class RoleView(discord.ui.View):
