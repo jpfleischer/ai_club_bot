@@ -17,7 +17,6 @@ COMMITTEE_ROLES = {
 }
 
 
-
 class RoleButton(discord.ui.Button):
     def __init__(self, role_name: str, emoji: str):
         super().__init__(
@@ -150,7 +149,7 @@ async def on_ready():
     except Exception as e:
         print(f"Error syncing commands: {e}")
 
-    bot.add_view(RoleView()) 
+    bot.add_view(RoleView())
     print(" Registered RoleView as persistent")
 
 
@@ -733,12 +732,7 @@ async def showroles(interaction: discord.Interaction):
     Shows buttons for users to self-assign/remove committee roles.
     """
     await interaction.response.send_message(
-        """📌 Select the committee(s) you want to join by clicking the buttons below:
-            Campus and Community Connections Committee: 🌐,
-            Technological Advancements Committee: 💻,
-            Graduate Affairs Committee: 🎓,
-            Academics and Research Committee: 📚
-        """,
+        "📌 Select the committee(s) you want to join by clicking the buttons below:\n\nCampus and Community Connections Committee: 🌐,\nTechnological Advancements Committee: 💻,\nGraduateAffairs Committee: 🎓,\nAcademics and Research Committee: 📚\n\n",
         view=RoleView()
     )
 
