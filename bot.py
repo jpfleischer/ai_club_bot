@@ -2,6 +2,7 @@ import os
 import discord
 from discord import app_commands
 from discord.ext import commands
+from discord.ui import View, Button
 import psycopg2
 from typing import Optional
 import io
@@ -158,6 +159,38 @@ async def _deny_ephemeral(interaction: discord.Interaction, msg: str = "You need
             pass
     else:
         await interaction.response.send_message(msg, ephemeral=True)
+
+
+async def _send_codeblock_chunks(
+    interaction: discord.Interaction,
+    lines: list[str],
+    *,
+    ephemeral: bool = False,
+):
+    """Send a list of lines inside one or more ``` code blocks without exceeding 2000 chars.
+       It will use interaction.response for the first send (if available), otherwise followups."""
+    CHUNK_SIZE = 1900  # headroom for ``` and newlines
+    chunks, buf = [], "```\n"
+    for line in lines:
+        if len(buf) + len(line) + 1 > CHUNK_SIZE:
+            buf += "```"
+            chunks.append(buf)
+            buf = "```\n"
+        buf += line + "\n"
+    if buf != "```\n":
+        buf += "```"
+        chunks.append(buf)
+
+    # choose the correct sender based on whether we've responded already
+    first_send = (
+        interaction.response.send_message
+        if not interaction.response.is_done()
+        else interaction.followup.send
+    )
+
+    await first_send(chunks[0], ephemeral=ephemeral)
+    for chunk in chunks[1:]:
+        await interaction.followup.send(chunk, ephemeral=ephemeral)
 
 
 # --- ONE global error handler for all app commands ---
@@ -350,52 +383,48 @@ async def removepoints(interaction: discord.Interaction, member: str, amount: fl
 
 @bot.tree.command(name="showpoints", description="Show a particular member's points or everyone's.")
 @app_commands.describe(member="Optionally specify a member to show points for. If omitted, shows all.")
-# <--- attach here, too (optional)
 @app_commands.autocomplete(member=member_autocomplete)
 async def showpoints(interaction: discord.Interaction, member: Optional[str] = None):
     """
     If 'member' is provided, show points for that one member.
-    Otherwise, show points for everyone.
+    Otherwise, show points for everyone (paged to respect Discord 2000-char limit).
     """
     if member is None:
-        # No member provided -> show all
-        cursor.execute(
-            "SELECT member_name, points FROM points ORDER BY member_name ASC")
+        cursor.execute("SELECT member_name, points FROM points ORDER BY member_name ASC")
         rows = cursor.fetchall()
-
         if not rows:
             await interaction.response.send_message("No members in the database yet!")
             return
 
-        # Build table for all
-        points_table = "```\nName         Points\n"
-        points_table += "------------  ------\n"
+        # format a simple table
+        header = ["Name", "Points"]
+        sep = ["------------", "------"]
+        lines = [f"{header[0]:<28}  {header[1]}",
+                 f"{sep[0]:<28}  {sep[1]}"]
+        for name_, pts in rows:
+            # use :g to avoid trailing .0 spam; switch to :.2f if you prefer fixed decimals
+            lines.append(f"{name_:<28}  {pts:g}")
 
-        for (name_, pts) in rows:
-            points_table += f"{name_:12}  {pts}\n"
+        await _send_codeblock_chunks(interaction, lines)
+        return
 
-        points_table += "```"
-        await interaction.response.send_message(points_table)
-    else:
-        # Specific member -> show only that one
-        cursor.execute(
-            "SELECT member_name, points FROM points WHERE member_name = %s", (member,))
-        row = cursor.fetchone()
-        if not row:
-            await interaction.response.send_message(
-                f"Member '{member}' does not exist in the database."
-            )
-            return
+    # specific member
+    cursor.execute("SELECT member_name, points FROM points WHERE member_name = %s", (member,))
+    row = cursor.fetchone()
+    if not row:
+        await interaction.response.send_message(f"Member '{member}' does not exist in the database.", ephemeral=True)
+        return
 
-        member_name, pts = row
-        points_table = "```\nName         Points\n"
-        points_table += "------------  ------\n"
-        points_table += f"{member_name:12}  {pts}\n"
-        points_table += "```"
-
-        await interaction.response.send_message(points_table)
+    member_name, pts = row
+    lines = [
+        f"{'Name':<28}  Points",
+        f"{'------------':<28}  ------",
+        f"{member_name:<28}  {pts:g}",
+    ]
+    await _send_codeblock_chunks(interaction, lines, ephemeral=False)
 
 
+@cabinet_only()
 @bot.tree.command(name="showlogs", description="Show the historical logs for a given member.")
 @app_commands.describe(member="The member whose history/logs you want to see.")
 # <--- attach here as well
@@ -440,86 +469,236 @@ async def showlogs(interaction: discord.Interaction, member: str):
     await interaction.response.send_message(logs_table)
 
 
+@cabinet_only()
 @bot.tree.command(name="showmembers", description="Show a list of all members in the database.")
 async def showmembers(interaction: discord.Interaction):
     """
-    Shows a list of all members in the database.
+    Shows a list of all members in the database, paged to respect Discord's 2000-char limit.
     """
     cursor.execute("SELECT member_name FROM points ORDER BY member_name ASC")
     rows = cursor.fetchall()
-
     if not rows:
         await interaction.response.send_message("No members in the database yet!")
         return
 
-    members_list = "```\nMembers\n"
-    members_list += "------------\n"
-    for (name_,) in rows:
-        members_list += f"{name_}\n"
-    members_list += "```"
+    members = [r[0] for r in rows]
+    lines = ["Members", "------------"] + members
+    await _send_codeblock_chunks(interaction, lines)
 
-    await interaction.response.send_message(members_list)
 
 @cabinet_only()
-@bot.tree.command(name="addMembers_fromExcel", description="Upload an Excel file with First/Last Name columns to add members.")
+@bot.tree.command(
+    name="addmembers_fromexcel",
+    description="Upload an Excel file with First/Last Name columns to add members."
+)
 @app_commands.describe(file="Excel file (.xlsx) with First Name and Last Name columns")
 async def addmembers_fromexcel(interaction: discord.Interaction, file: discord.Attachment):
     # Check file type
-    if not file.filename.endswith(".xlsx"):
+    if not file.filename.lower().endswith(".xlsx"):
         await interaction.response.send_message("Please upload a valid .xlsx Excel file.", ephemeral=True)
         return
 
     file_bytes = await file.read()
-    workbook = openpyxl.load_workbook(io.BytesIO(file_bytes))
-    sheet = workbook.active  # use first sheet
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    sheet = wb.active  # first sheet
 
-    headers = {cell.value.lower(): idx for idx, cell in enumerate(next(sheet.iter_rows(min_row=1, max_row=1)), start=1)}
+    # --- Robust header detection (nil-safe + flexible names) ---
+    import re
 
-    if "first name" not in headers or "last name" not in headers:
-        await interaction.response.send_message("Excel must contain 'First Name' and 'Last Name' columns.", ephemeral=True)
+    def norm(s: Optional[str]) -> str:
+        # lower, trim, remove non-alphanumerics to normalize variations like "First name", "first-name", etc.
+        return re.sub(r"[^a-z0-9]", "", (s or "").strip().lower())
+
+    # Read header row as plain values (no .value access needed)
+    header_row = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True))
+    norm_to_index0 = {norm(v): i for i, v in enumerate(header_row)}  # 0-based indices
+
+    # Accept a few common variants
+    first_candidates = {"firstname", "first", "fname"}
+    last_candidates  = {"lastname", "last", "lname", "surname", "familyname"}
+
+    def find_index(candidates: set[str]) -> Optional[int]:
+        for key in candidates:
+            if key in norm_to_index0:
+                return norm_to_index0[key]
+        return None
+
+    first_i = find_index(first_candidates)
+    last_i  = find_index(last_candidates)
+
+    if first_i is None or last_i is None:
+        pretty = ", ".join(str(v) if v is not None else "∅" for v in header_row)
+        await interaction.response.send_message(
+            "Excel must contain **First Name** and **Last Name** columns.\n"
+            "Accepted header variants:\n"
+            " • First Name: First name / First / FirstName / FName\n"
+            " • Last Name:  Last name / Last / LastName / LName / Surname / Family Name\n"
+            f"Detected header row: {pretty}",
+            ephemeral=True
+        )
         return
 
-    first_idx = headers["first name"]
-    last_idx = headers["last name"]
-
+    # --- Ingest rows ---
     added, skipped = [], []
 
-    for row in sheet.iter_rows(min_row=2):
-        first = row[first_idx-1].value
-        last = row[last_idx-1].value
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        first = (row[first_i] or "").strip()
+        last  = (row[last_i]  or "").strip()
         if not first or not last:
             continue
-        member_name = f"{first.strip()} {last.strip()}"
 
-        # Check if exists
-        cursor.execute("SELECT member_name FROM points WHERE member_name = %s", (member_name,))
+        member_name = f"{first} {last}"
+        # Up to you: enforce a simple whitelist to avoid weird DB entries
+        # if not re.fullmatch(r"[A-Za-z][A-Za-z '\-]{0,48}[A-Za-z]?", member_name):
+        #     continue
+
+        # Insert if not exists
+        cursor.execute("SELECT 1 FROM points WHERE member_name = %s", (member_name,))
         if cursor.fetchone() is None:
-            cursor.execute("INSERT INTO points (member_name, points) VALUES (%s, %s)", (member_name, 0.0))
+            cursor.execute(
+                "INSERT INTO points (member_name, points) VALUES (%s, %s)",
+                (member_name, 0.0)
+            )
             added.append(member_name)
         else:
             skipped.append(member_name)
 
-    # Build response
-    msg = f"✅ Added {len(added)} members.\n"
+    # --- Report ---
+    msg = f"✅ Added {len(added)} members."
     if skipped:
-        msg += f"⚠️ Skipped {len(skipped)} existing members.\n"
+        msg += f"  ⚠️ Skipped {len(skipped)} duplicate{'s' if len(skipped)!=1 else ''} (already existed)."
     if added:
-        msg += "Newly added: " + ", ".join(added[:10]) + ("..." if len(added) > 10 else "")
+        msg += "\nNewly added: " + ", ".join(added[:10]) + ("..." if len(added) > 10 else "")
 
-    await interaction.response.send_message(msg)
+    # Send summary first
+    await interaction.response.send_message(msg, ephemeral=True)
+
+    # If there are duplicates, send their names as a paged code block list (now safe)
+    if skipped:
+        lines = ["Duplicates (already existed)", "-----------------------------"] + skipped
+        await _send_codeblock_chunks(interaction, lines, ephemeral=True)
+
+
+@cabinet_only()
+@bot.tree.command(name="renamemember", description="Rename a member and update their history.")
+@app_commands.describe(
+    old_member="Existing member to rename",
+    new_name="New name (e.g., 'First Last')"
+)
+@app_commands.autocomplete(old_member=member_autocomplete)
+async def renamemember(interaction: discord.Interaction, old_member: str, new_name: str):
+    # --- normalize new name ---
+    new_name = " ".join((new_name or "").strip().split())  # collapse extra spaces
+    if not new_name:
+        await interaction.response.send_message("New name cannot be empty.", ephemeral=True)
+        return
+    if len(new_name) > 50:
+        await interaction.response.send_message("New name must be ≤ 50 characters.", ephemeral=True)
+        return
+
+    # --- ensure old exists ---
+    cursor.execute("SELECT points FROM points WHERE member_name = %s", (old_member,))
+    row = cursor.fetchone()
+    if not row:
+        await interaction.response.send_message(
+            f"Member '{old_member}' does not exist.", ephemeral=True
+        )
+        return
+
+    # --- block duplicates ---
+    cursor.execute("SELECT 1 FROM points WHERE member_name = %s", (new_name,))
+    if cursor.fetchone():
+        await interaction.response.send_message(
+            f"Cannot rename to '{new_name}' because that name already exists.", ephemeral=True
+        )
+        return
+
+    # --- do the rename in both tables ---
+    # points table (unique key lives here)
+    cursor.execute(
+        "UPDATE points SET member_name = %s WHERE member_name = %s",
+        (new_name, old_member)
+    )
+    # history table (non-unique, update all rows)
+    cursor.execute(
+        "UPDATE history SET member_name = %s WHERE member_name = %s",
+        (new_name, old_member)
+    )
+
+    await interaction.response.send_message(
+        f"✅ Renamed **{old_member}** → **{new_name}**."
+    )
+
+
+@bot.tree.command(name="membercount", description="Show the total number of members in the AI Club.")
+async def membercount(interaction: discord.Interaction):
+    cursor.execute("SELECT COUNT(*) FROM points")
+    (count,) = cursor.fetchone()
+    await interaction.response.send_message(f"Total members: **{count}**")
+
 
 @cabinet_only()
 @bot.tree.command(name="removeallmembers", description="⚠️ Remove ALL members and their history from the database.")
 async def removeallmembers(interaction: discord.Interaction):
-    #Removes all the members that the discord bot has saved. Useful only for new years/new semesters. Resets.
-    # Delete history first (FK consistency if you add constraints later)
-    cursor.execute("DELETE FROM history")
-    cursor.execute("DELETE FROM points")
+    """Ask for confirmation before removing all members."""
 
+    class ConfirmView(View):
+        def __init__(self, owner_id: int):
+            super().__init__(timeout=30)  # 30s timeout
+            self.owner_id = owner_id
+
+        async def interaction_check(self, i: discord.Interaction) -> bool:
+            # Only the original invoker can press buttons
+            if i.user.id != self.owner_id:
+                await i.response.send_message("You can't interact with this confirmation.", ephemeral=True)
+                return False
+            return True
+
+        async def on_timeout(self):
+            # Disable buttons when timing out
+            for item in self.children:
+                if isinstance(item, Button):
+                    item.disabled = True
+            try:
+                await self.message.edit(content="⏳ Confirmation timed out. No changes made.", view=self)
+            except Exception:
+                pass
+
+        @discord.ui.button(label="YES, DELETE EVERYTHING", style=discord.ButtonStyle.danger)
+        async def confirm(self, interaction_btn: discord.Interaction, button: Button):
+            # Perform deletion
+            cursor.execute("DELETE FROM history")
+            cursor.execute("DELETE FROM points")
+
+            # Disable buttons after action
+            for item in self.children:
+                if isinstance(item, Button):
+                    item.disabled = True
+
+            await interaction_btn.response.edit_message(
+                content="⚠️ All members and their history have been **permanently removed**.",
+                view=self
+            )
+
+        @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
+        async def cancel(self, interaction_btn: discord.Interaction, button: Button):
+            for item in self.children:
+                if isinstance(item, Button):
+                    item.disabled = True
+            await interaction_btn.response.edit_message(
+                content="Action cancelled. Database unchanged.",
+                view=self
+            )
+
+    view = ConfirmView(owner_id=interaction.user.id)
+    # Keep a handle to edit on timeout
     await interaction.response.send_message(
-        "⚠️ All members and their history have been **permanently removed** from the database.",
+        "⚠️ **Are you absolutely sure?** This will permanently delete **all members and their history**.",
+        view=view,
         ephemeral=True
     )
+    # Save the message so on_timeout can edit it
+    view.message = await interaction.original_response()
 
 
 bot.run(DISCORD_TOKEN)
