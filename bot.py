@@ -732,7 +732,7 @@ async def showroles(interaction: discord.Interaction):
     Shows buttons for users to self-assign/remove committee roles.
     """
     await interaction.response.send_message(
-        "📌 Select the committee(s) you want to join by clicking the buttons below:\n\nConnections Committee: 🌐\nTechnological Advancements Committee: 💻\nGraduateAffairs Committee: 🎓\nAcademics and Research Committee: 📚 \n \u200B",
+        "📌 Select the committee(s) you want to join by clicking the buttons below:\n\nConnections Committee: 🌐\nTechnological Advancements Committee: 💻\nGraduate Affairs Committee: 🎓\nAcademics and Research Committee: 📚 \n \u200B",
         view=RoleView()
     )
 
